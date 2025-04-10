@@ -1,5 +1,4 @@
 require('dotenv').config();
-
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -25,14 +24,13 @@ app.use(cors({
   methods: ['GET', 'POST'],
   credentials: true,
 }));
-
 app.use(express.json());
 
-// Temp folder setup
+// Create temp folder
 const tempFolder = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder);
 
-// Test FFmpeg
+// Test FFmpeg endpoint
 app.get('/test-ffmpeg', (req, res) => {
   res.send(`FFmpeg Path: ${ffmpegPath} | Exists: ${fs.existsSync(ffmpegPath)}`);
 });
@@ -56,7 +54,7 @@ app.post('/get-playlist-info', async (req, res) => {
   }
 });
 
-// Download playlist
+// Download and convert
 app.post('/download-playlist', async (req, res) => {
   const { playlistUrl } = req.body;
   if (!playlistUrl) return res.status(400).json({ error: 'Playlist URL is required' });
@@ -67,27 +65,24 @@ app.post('/download-playlist', async (req, res) => {
 
   try {
     const playlist = await ytpl(playlistUrl, { pages: Infinity });
-    console.log(`📥 Downloading ${playlist.items.length} videos`);
+    console.log(`Downloading ${playlist.items.length} videos`);
 
     for (const item of playlist.items) {
       const title = item.title.replace(/[\/\\?%*:|"<>]/g, '_');
       const outputPath = path.join(sessionPath, `${title}.mp3`);
       console.log('⏬ Processing:', item.title);
-    
-      let info;
+
       try {
-        info = await ytdl.getInfo(item.url);
-      } catch (err) {
-        console.warn(`❌ Skipping [${item.title}] - video unavailable or blocked.`);
-        continue;
-      }
-    
-      const audioStream = ytdl.downloadFromInfo(info, {
-        filter: 'audioonly',
-        highWaterMark: 1 << 25,
-      });
-    
-      try {
+        const audioStream = ytdl(item.url, {
+          filter: 'audioonly',
+          highWaterMark: 1 << 25,
+          requestOptions: {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            },
+          },
+        });
+
         await new Promise((resolve, reject) => {
           ffmpeg(audioStream)
             .audioBitrate(128)
@@ -95,46 +90,53 @@ app.post('/download-playlist', async (req, res) => {
             .on('end', resolve)
             .on('error', reject);
         });
+
+        if (!fs.existsSync(outputPath)) {
+          console.warn(`⚠️ Skipping missing file: ${outputPath}`);
+          continue;
+        }
+
+        console.log('✅ Done:', item.title);
+        await sleep(7000); // Rate limit safety
+
       } catch (err) {
-        console.error(`❌ FFmpeg error for [${item.title}]:`, err.message);
+        console.warn(`⚠️ Error downloading "${item.title}":`, err.message);
         continue;
       }
-    
-      await sleep(7000); // delay to reduce rate limits
-      console.log('✅ Done:', item.title);
     }
-    
 
-    const filesInSession = fs.readdirSync(sessionPath);
-    console.log(`📂 Files in session folder:`, filesInSession);
+    const downloadedFiles = fs.readdirSync(sessionPath).filter(file => file.endsWith('.mp3'));
+    if (downloadedFiles.length === 0) {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      return res.status(500).json({ error: 'No valid videos were downloaded. They might be restricted or unavailable.' });
+    }
 
+    // Create zip
     const zipPath = path.join(tempFolder, `${sessionId}.zip`);
     const output = fs.createWriteStream(zipPath);
     const archive = archiver('zip', { zlib: { level: 9 } });
 
     archive.pipe(output);
     archive.directory(sessionPath, false);
-    archive.finalize();
+    await archive.finalize();
 
     output.on('close', () => {
-      console.log('📦 ZIP finalized, starting download');
       res.download(zipPath, `${playlist.title}.zip`, err => {
-        if (err) console.error('❌ Download error:', err);
         fs.rmSync(sessionPath, { recursive: true, force: true });
         fs.unlinkSync(zipPath);
       });
     });
 
     output.on('error', err => {
-      console.error('❌ Zip stream error:', err);
+      console.error('Zip stream error:', err);
       res.status(500).send('Failed to zip files.');
     });
 
   } catch (err) {
     console.error(err);
+    fs.rmSync(sessionPath, { recursive: true, force: true });
     res.status(500).json({ error: err.message });
   }
 });
 
-// Start server
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
