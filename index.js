@@ -18,10 +18,14 @@ const sleep = util.promisify(setTimeout);
 const app = express();
 
 const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CORS_ORIGIN || '*'; // default to allow all if not set
+const CLIENT_ORIGIN = process.env.CORS_ORIGIN || 'https://yt-audio-down-frontend-laxo.vercel.app';
 
-// Middleware
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(cors({
+  origin: CLIENT_ORIGIN,
+  methods: ['GET', 'POST'],
+  credentials: true,
+}));
+
 app.use(express.json());
 
 // Temp folder setup
@@ -86,7 +90,11 @@ app.post('/download-playlist', async (req, res) => {
           .audioBitrate(128)
           .save(outputPath)
           .on('end', resolve)
-          .on('error', reject);
+          .on('error', (err) => {
+            console.error("❌ FFmpeg Error:", err.message);
+            reject(err);
+          });
+          
       });
 
       await sleep(2000); // delay to avoid rate limiting
