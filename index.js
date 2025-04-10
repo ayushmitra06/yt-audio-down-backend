@@ -97,7 +97,7 @@ app.post('/download-playlist', async (req, res) => {
           
       });
 
-      await sleep(2000); // delay to avoid rate limiting
+      await sleep(3800); // delay to avoid rate limiting
       console.log('✅ Done:', item.title);
     }
 
