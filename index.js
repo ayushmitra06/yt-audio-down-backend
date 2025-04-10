@@ -73,42 +73,37 @@ app.post('/download-playlist', async (req, res) => {
       const title = item.title.replace(/[\/\\?%*:|"<>]/g, '_');
       const outputPath = path.join(sessionPath, `${title}.mp3`);
       console.log('⏬ Processing:', item.title);
-
-      const audioStream = ytdl(item.url, {
+    
+      let info;
+      try {
+        info = await ytdl.getInfo(item.url);
+      } catch (err) {
+        console.warn(`❌ Skipping [${item.title}] - video unavailable or blocked.`);
+        continue;
+      }
+    
+      const audioStream = ytdl.downloadFromInfo(info, {
         filter: 'audioonly',
         highWaterMark: 1 << 25,
-        requestOptions: {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36',
-          },
-        },
       });
-
+    
       try {
         await new Promise((resolve, reject) => {
           ffmpeg(audioStream)
             .audioBitrate(128)
             .save(outputPath)
-            .on('end', () => {
-              console.log('✅ Saved:', outputPath);
-              resolve();
-            })
-            .on('error', (err) => {
-              console.error('❌ FFmpeg Error:', err);
-              reject(err);
-            });
+            .on('end', resolve)
+            .on('error', reject);
         });
       } catch (err) {
-        if (err.message.includes('429')) {
-          console.warn('⚠️ Rate limited. Skipping:', item.title);
-          continue;
-        }
-        throw err;
+        console.error(`❌ FFmpeg error for [${item.title}]:`, err.message);
+        continue;
       }
-
-      await sleep(7000);
+    
+      await sleep(7000); // delay to reduce rate limits
       console.log('✅ Done:', item.title);
     }
+    
 
     const filesInSession = fs.readdirSync(sessionPath);
     console.log(`📂 Files in session folder:`, filesInSession);
