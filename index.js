@@ -122,6 +122,12 @@ app.post('/download-playlist', async (req, res) => {
         fs.unlinkSync(zipPath);
       });
     });
+
+    output.on('error', err => {
+      console.error('Zip stream error:', err);
+      res.status(500).send('Failed to zip files.');
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
