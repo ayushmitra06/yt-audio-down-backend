@@ -68,6 +68,7 @@ app.post('/download-playlist', async (req, res) => {
     for (const item of playlist.items) {
       const title = item.title.replace(/[\/\\?%*:|"<>]/g, '_');
       const outputPath = path.join(sessionPath, `${title}.mp3`);
+      console.log('⏬ Processing:', item.title);
 
       const audioStream = ytdl(item.url, {
         filter: 'audioonly',
@@ -88,7 +89,8 @@ app.post('/download-playlist', async (req, res) => {
           .on('error', reject);
       });
 
-      await sleep(3000); // delay to avoid rate limiting
+      await sleep(2000); // delay to avoid rate limiting
+      console.log('✅ Done:', item.title);
     }
 
     // Zip the folder
