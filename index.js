@@ -5,6 +5,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const ytpl = require('ytpl');
+process.env.YTDL_NO_UPDATE = '1';
 const ytdl = require('@distube/ytdl-core');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
@@ -79,25 +80,30 @@ app.post('/download-playlist', async (req, res) => {
         highWaterMark: 1 << 25,
         requestOptions: {
           headers: {
-            'User-Agent': 'Mozilla/5.0',
-            'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36',
           },
         },
       });
+      
 
-      await new Promise((resolve, reject) => {
-        ffmpeg(audioStream)
-          .audioBitrate(128)
-          .save(outputPath)
-          .on('end', resolve)
-          .on('error', (err) => {
-            console.error("❌ FFmpeg Error:", err.message);
-            reject(err);
-          });
-          
-      });
+      try {
+        await new Promise((resolve, reject) => {
+          ffmpeg(audioStream)
+            .audioBitrate(128)
+            .save(outputPath)
+            .on('end', resolve)
+            .on('error', reject);
+        });
+      } catch (err) {
+        if (err.message.includes('429')) {
+          console.warn('⚠️ Rate limited. Skipping:', item.title);
+          continue;
+        }
+        throw err; // Rethrow for other errors
+      }
+      
 
-      await sleep(3800); // delay to avoid rate limiting
+      await sleep(7000); // delay to avoid rate limiting
       console.log('✅ Done:', item.title);
     }
 
